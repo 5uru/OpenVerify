@@ -14,6 +14,11 @@ https://zenodo.org/records/8213348
 https://universe.roboflow.com/kolzek/face-anti-spoofing-ez
 https://universe.roboflow.com/operation-suffer/face-id-rbzjs
 https://www.kaggle.com/datasets/trainingdatapro/ibeta-level-1-liveness-detection-dataset-part-1
+https://github.com/MuhFaridanSutariya/anti-spoofing
+https://github.com/minivision-ai/Silent-Face-Anti-Spoofing
+https://github.com/DoubangoTelecom/FaceLivenessDetection-SDK?tab=readme-ov-file
+https://github.com/sakethbachu/Face-Liveness-Detection?tab=readme-ov-file
+https://github.com/anand498/Face-Liveness-Detection?tab=readme-ov-file
 
 # Papers
 
