@@ -7,3 +7,5 @@ https://www.kaggle.com/search?q=Fingerprints+in%3Adatasets
 # Datasets:
 
 https://www.kaggle.com/datasets/felipebandeiraramos/synthetic-eu-drivers-licences
+
+texture: https://github.com/dpbenalcazar/textures
