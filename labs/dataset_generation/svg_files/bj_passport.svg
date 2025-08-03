@@ -3783,9 +3783,9 @@
 
     <g id="Photo" data-name="Photo">
       <image id="photo_image" width="868" height="1116" transform="translate(5.67 49.94) scale(.12)"
-        xlink:href="data:image/png;base64," />
+        xlink:href="data:image/jpg;base64,{{PHOTO}}" />
       <image id="ghost_image" class="cls-124" width="868" height="1116" transform="translate(180 90) scale(.05)"
-        xlink:href="data:image/png;base64," />
+        xlink:href="data:image/jpg;base64,{{PHOTO}}" />
       <g class="cls-17">
         <circle cx="107.23" cy="182.69" r=".59" />
         <circle cx="109.32" cy="182.69" r=".59" />
