@@ -4,22 +4,48 @@ import random
 from pathlib import Path
 import time
 import secrets
-
+from functools import lru_cache
 
 import cairosvg
 from faker import Faker
 from jinja2 import Template
 from mrz.generator.td3 import TD3CodeGenerator
 
-def load_random_photo(photo_dir="id_photo"):
-    """Load a random photo from the specified directory and convert to base64."""
+# Cache photos and template
+PHOTO_CACHE = []
+TEMPLATE_CACHE = {}
+
+def preload_photos(photo_dir="id_photo"):
+    """Preload photos to avoid disk I/O during generation."""
+    global PHOTO_CACHE
+    if PHOTO_CACHE:  # Return if already loaded
+        return len(PHOTO_CACHE)
+
     photo_files = list(Path(photo_dir).glob("*.jpg"))
     if not photo_files:
         raise FileNotFoundError(f"No photos found in {photo_dir}")
 
-    photo_path = photo_files[secrets.randbelow(len(photo_files))]
-    with open(photo_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+    for photo_path in photo_files:
+        with open(photo_path, "rb") as image_file:
+            PHOTO_CACHE.append(base64.b64encode(image_file.read()).decode('utf-8'))
+
+    return len(PHOTO_CACHE)
+
+def load_random_photo(photo_dir="id_photo"):
+    """Get a random photo, using cache if available."""
+    global PHOTO_CACHE
+    if not PHOTO_CACHE:
+        preload_photos(photo_dir)
+
+    return PHOTO_CACHE[secrets.randbelow(len(PHOTO_CACHE))]
+
+@lru_cache(maxsize=4)
+def get_template(template_path):
+    """Load and cache template to avoid repeated file reads."""
+    if template_path not in TEMPLATE_CACHE:
+        with open(template_path) as f:
+            TEMPLATE_CACHE[template_path] = Template(f.read())
+    return TEMPLATE_CACHE[template_path]
 
 def generate_passport_data(fake):
     """Generate random passport data using Faker."""
@@ -29,10 +55,10 @@ def generate_passport_data(fake):
             "gender": fake.random_element(elements=('M', 'F')),
             "place_of_birth": fake.city(),
             "residence": fake.city(),
-            "passport_number": fake.bothify(text='##??#####', letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+            "passport_number": fake.bothify(text='??#######', letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
             "height": round(random.uniform(1.5, 2.0), 2),
             "birth_date": fake.date_of_birth(minimum_age=18, maximum_age=65),
-            "expiry_date": fake.date_between(start_date='today', end_date='+6y'),
+            "expiry_date": fake.date_between(end_date='+6y'),
             "issue_date": fake.date_this_decade()
     }
     return data
@@ -42,31 +68,26 @@ def format_dates(passport_data):
     return {
             "birth_date_mrz": passport_data["birth_date"].strftime("%y%m%d"),
             "expiry_date_mrz": passport_data["expiry_date"].strftime("%y%m%d"),
-            "birth_date_display": passport_data["birth_date"].strftime("%d %m %Y"),
-            "expiry_date_display": passport_data["expiry_date"].strftime("%d %m %Y"),
-            "issue_date_display": passport_data["issue_date"].strftime("%d %m %Y")
+            "birth_date_display": passport_data["birth_date"].strftime("%d %m %y"),
+            "expiry_date_display": passport_data["expiry_date"].strftime("%d %m %y"),
+            "issue_date_display": passport_data["issue_date"].strftime("%d %m %y")
     }
 
 def prepare_mrz_names(surname, full_name, max_length=39):
     """Prepare names for MRZ by truncating if necessary and removing invalid characters."""
-    # Remove invalid characters (keeping only letters, spaces, and hyphens)
-    # The MRZ format requires specific characters and '<' for spaces
     def sanitize_for_mrz(text):
-        # Keep only letters, spaces and hyphens
         return ''.join(c for c in text if c.isalpha() or c in ' -')
 
     surname = sanitize_for_mrz(surname)
     full_name = sanitize_for_mrz(full_name)
     given_names = full_name.replace(surname, "").strip()
 
-    if len(surname) + len(given_names) + 2 <= max_length:  # +2 for "<<" separator
+    if len(surname) + len(given_names) + 2 <= max_length:
         return surname, given_names
 
-    # Calculate max length for each part (prioritize surname)
     max_surname_length = min(len(surname), (max_length - 2) // 2)
     surname_mrz = surname[:max_surname_length]
 
-    # Remaining space for given names
     max_given_length = max_length - 2 - len(surname_mrz)
     given_names_mrz = given_names[:max_given_length]
 
@@ -80,15 +101,15 @@ def generate_mrz(passport_data, formatted_dates):
     )
 
     return TD3CodeGenerator(
-            "P",                            # Document type (Passport)
-            "BEN",                          # Country code
-            surname_mrz,                    # Surname (possibly truncated)
-            given_names_mrz,                # Given names (possibly truncated)
-            passport_data["passport_number"], # Document number
-            "BEN",                          # Nationality
-            formatted_dates["birth_date_mrz"],  # Birth date
-            passport_data["gender"],        # Sex/Gender
-            formatted_dates["expiry_date_mrz"]  # Expiry date
+            "P",
+            "BEN",
+            surname_mrz,
+            given_names_mrz,
+            passport_data["passport_number"],
+            "BEN",
+            formatted_dates["birth_date_mrz"],
+            passport_data["gender"],
+            formatted_dates["expiry_date_mrz"]
     )
 
 def escape_data_for_xml(data):
@@ -99,14 +120,13 @@ def escape_data_for_xml(data):
 def render_passport_svg(template_path, data, photo_base64):
     """Render the passport SVG template with data."""
     try:
-        with open(template_path) as f:
-            template = Template(f.read())
+        template = get_template(template_path)
 
         return template.render(
                 MRZ_LINE1=data["mrz_line1"],
                 MRZ_LINE2=data["mrz_line2"],
-                NAME=data["surname"],  # Note: These appear to be swapped in the original
-                SURNAME=data["name"],  # Note: These appear to be swapped in the original
+                NAME=data["surname"],
+                SURNAME=data["name"],
                 DATE_OF_BIRTH=data["birth_date_display"],
                 GENDER=data["gender"],
                 PLACE_OF_BIRTH=data["place_of_birth"],
@@ -120,12 +140,15 @@ def render_passport_svg(template_path, data, photo_base64):
     except Exception as e:
         raise RuntimeError(f"Failed to render SVG template: {e}")
 
-def main(template_path="svg_files/bj_passport.svg", output_dir="data", scale=3):
-    """Main function to generate a passport image."""
+def main(template_path="svg_files/civ_passport.svg", output_dir="data", scale=3):
+    """Main function to generate a passport image with optimized performance."""
+    # Create output directory if it doesn't exist
+    Path(output_dir).mkdir(exist_ok=True)
+
     # Initialize Faker with multiple locales
     fake = Faker(['yo_NG', 'fr_FR', 'zu_ZA'])
 
-    # Load random photo
+    # Load random photo (using cache)
     photo_base64 = load_random_photo()
 
     # Generate passport data
@@ -150,14 +173,12 @@ def main(template_path="svg_files/bj_passport.svg", output_dir="data", scale=3):
     # Render SVG
     rendered_svg = render_passport_svg(template_path, escaped_data, photo_base64)
 
-    # Create output directory if it doesn't exist
-    Path(output_dir).mkdir(exist_ok=True)
-
     # Generate unique ID based on passport number and timestamp
     unique_id = f"{passport_data['passport_number']}_{int(time.time())}"
 
     # Create output path with unique ID
     output_path = Path(output_dir) / f"passport_{unique_id}.png"
+
     # Convert SVG to PNG
     cairosvg.svg2png(
             bytestring=rendered_svg.encode('utf-8'),
@@ -165,8 +186,16 @@ def main(template_path="svg_files/bj_passport.svg", output_dir="data", scale=3):
             scale=scale,
             unsafe=True
     )
+
     combined_data["output_path"] = str(output_path)
+
+
     return combined_data
 
 if __name__ == "__main__":
-    print(main())
+    # Preload photos at startup
+    num_photos = preload_photos()
+    print(f"Preloaded {num_photos} photos")
+
+    result = main()
+    print(f"Generated passport: {result['output_path']}")

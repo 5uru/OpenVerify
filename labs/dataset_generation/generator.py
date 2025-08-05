@@ -14,9 +14,8 @@ from civ_passport_generator import main as generate_civ_passport
 
 def setup_directories():
     """Create necessary directories for the dataset."""
-    os.makedirs("dataset", exist_ok=True)
-    os.makedirs("dataset/images", exist_ok=True)
-    os.makedirs("dataset/metadata", exist_ok=True)
+    # Create train directory for ImageFolder format
+    os.makedirs("data/train", exist_ok=True)
 
     # Ensure the photo directory exists
     os.makedirs("id_photo", exist_ok=True)
@@ -34,9 +33,9 @@ def standardize_metadata(doc_data, doc_type):
             "npi": "",
             "id_card": "",
             "expiry_date": "",
-            "sexe": "",
+            "sex": "",
             "document_type": doc_type,
-            "image_filename": ""
+            "file_name": ""  # Changed to file_name for HuggingFace compatibility
     }
 
     # Map fields based on document type
@@ -194,7 +193,6 @@ def upload_to_huggingface(repo_name, username=None):
         full_repo_name = f"{username}/{repo_name}"
 
         print(f"Creating repository: {full_repo_name}")
-        # Create repository if it doesn't exist
         try:
             create_repo(
                     repo_id=full_repo_name,
@@ -205,15 +203,13 @@ def upload_to_huggingface(repo_name, username=None):
         except Exception as e:
             print(f"Repository might already exist or couldn't be created: {e}")
 
-        # Upload all files in the dataset directory
-        print("Uploading dataset files to Hugging Face...")
-        api.upload_folder(
-                folder_path="dataset",
-                repo_id=full_repo_name,
-                repo_type="dataset",
-                token=token,
-                commit_message="Upload African ID documents dataset"
-        )
+        # Load the dataset using the ImageFolder format
+        print("Loading dataset with ImageFolder format...")
+        dataset = load_dataset("imagefolder", data_dir="data")
+
+        # Push to hub
+        print(f"Pushing dataset to {full_repo_name}...")
+        dataset.push_to_hub(full_repo_name, token=token)
 
         print(f"Dataset successfully uploaded to https://huggingface.co/datasets/{full_repo_name}")
         return True
@@ -222,7 +218,7 @@ def upload_to_huggingface(repo_name, username=None):
         print(f"Error uploading to Hugging Face: {e}")
         return False
 
-def create_and_upload_dataset(count_per_type=1000, repo_name="african-id-documents"):
+def create_and_upload_dataset(count_per_type=10, repo_name="african-id-documents"):
     """Generate documents and upload them directly to HuggingFace."""
     print(f"Generating {count_per_type} documents for each type...")
     metadata = generate_documents(count_per_type=count_per_type)
@@ -230,16 +226,13 @@ def create_and_upload_dataset(count_per_type=1000, repo_name="african-id-documen
     print("Saving metadata...")
     save_metadata(metadata)
 
-    print("Creating dataset card...")
-    create_dataset_card(len(metadata))
-
     print("Uploading to Hugging Face...")
     upload_success = upload_to_huggingface(repo_name)
 
     if upload_success:
         print("Dataset successfully generated and uploaded to Hugging Face!")
     else:
-        print("Dataset generated but upload failed. Files are available in the 'dataset' directory.")
+        print("Dataset generated but upload failed. Files are available in the 'data' directory.")
 
     print(f"Total documents generated: {len(metadata)} ({count_per_type} per document type)")
 

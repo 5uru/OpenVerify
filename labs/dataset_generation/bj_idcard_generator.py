@@ -1,30 +1,38 @@
 import base64
 import html
-import random
-from pathlib import Path
-import time
-import secrets
-from PIL import Image
 import io
+import time
+from pathlib import Path
+import secrets
 
 import cairosvg
 from faker import Faker
 from jinja2 import Template
 from mrz.generator.mrva import MRVACodeGenerator
+from PIL import Image
 
-def load_random_photo(photo_dir="id_photo"):
-    """Load a random photo from the specified directory and convert to base64."""
+def main(front_template="svg_files/bj_idcard_front.svg",
+                           back_template="svg_files/bj_idcard_back.svg",
+                           output_dir="data",
+                           photo_dir="id_photo",
+                           scale=3):
+    """Generate a single ID card image with front and back sides."""
+    # Ensure output directory exists
+    Path(output_dir).mkdir(exist_ok=True)
+
+    # Initialize Faker with multiple locales
+    fake = Faker(['yo_NG', 'fr_FR', 'zu_ZA'])
+
+    # Load random photo
     photo_files = list(Path(photo_dir).glob("*.jpg"))
     if not photo_files:
         raise FileNotFoundError(f"No photos found in {photo_dir}")
-
     photo_path = photo_files[secrets.randbelow(len(photo_files))]
     with open(photo_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+        photo_base64 = base64.b64encode(image_file.read()).decode('utf-8')
 
-def generate_idcard_data(fake):
-    """Generate random ID card data using Faker."""
-    data = {
+    # Generate ID card data
+    idcard_data = {
             "name": fake.name(),
             "surname": fake.last_name(),
             "gender": fake.random_element(elements=('M', 'F')),
@@ -35,45 +43,38 @@ def generate_idcard_data(fake):
             "birth_date": fake.date_of_birth(minimum_age=18, maximum_age=65),
             "expiry_date": fake.date_between(end_date='+6y'),
     }
-    return data
 
-def format_dates(idcard_data):
-    """Format dates for MRZ and display."""
-    return {
-            "birth_date_mrz": idcard_data["birth_date"].strftime("%y%m%d"),
-            "expiry_date_mrz": idcard_data["expiry_date"].strftime("%y%m%d"),
-            "birth_date_display": idcard_data["birth_date"].strftime("%d %m %Y"),
-            "expiry_date_display": idcard_data["expiry_date"].strftime("%d %m %Y"),
+    # Format dates
+    birth_date = idcard_data["birth_date"]
+    expiry_date = idcard_data["expiry_date"]
+    formatted_dates = {
+            "birth_date_mrz": birth_date.strftime("%y%m%d"),
+            "expiry_date_mrz": expiry_date.strftime("%y%m%d"),
+            "birth_date_display": birth_date.strftime("%d %m %Y"),
+            "expiry_date_display": expiry_date.strftime("%d %m %Y"),
     }
 
-def prepare_mrz_names(surname, full_name, max_length=39):
-    """Prepare names for MRZ by truncating if necessary and removing invalid characters."""
-    def sanitize_for_mrz(text):
-        return ''.join(c for c in text if c.isalpha() or c in ' -')
+    # Prepare names for MRZ
+    surname = idcard_data["surname"]
+    full_name = idcard_data["name"]
+    max_length = 39
 
-    surname = sanitize_for_mrz(surname)
-    full_name = sanitize_for_mrz(full_name)
-    given_names = full_name.replace(surname, "").strip()
+    # Clean names for MRZ
+    valid_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ -')
+    surname = ''.join(c for c in surname if c in valid_chars)
+    full_name = ''.join(c for c in full_name if c in valid_chars)
+    given_names = full_name.replace(surname, "", 1).strip()
 
-    if len(surname) + len(given_names) + 2 <= max_length:  # +2 for "<<" separator
-        return surname, given_names
+    if len(surname) + len(given_names) + 2 > max_length:
+        max_surname_length = min(len(surname), (max_length - 2) // 2)
+        surname_mrz = surname[:max_surname_length]
+        max_given_length = max_length - 2 - len(surname_mrz)
+        given_names_mrz = given_names[:max_given_length]
+    else:
+        surname_mrz, given_names_mrz = surname, given_names
 
-    max_surname_length = min(len(surname), (max_length - 2) // 2)
-    surname_mrz = surname[:max_surname_length]
-
-    max_given_length = max_length - 2 - len(surname_mrz)
-    given_names_mrz = given_names[:max_given_length]
-
-    return surname_mrz, given_names_mrz
-
-def generate_mrz(idcard_data, formatted_dates):
-    """Generate MRZ code using ID card data."""
-    surname_mrz, given_names_mrz = prepare_mrz_names(
-            idcard_data["surname"],
-            idcard_data["name"]
-    )
-
-    return MRVACodeGenerator(
+    # Generate MRZ code
+    mrz_generator = MRVACodeGenerator(
             "V",                           # Document type
             "BEN",                         # Country code
             surname_mrz,                   # Surname
@@ -84,110 +85,82 @@ def generate_mrz(idcard_data, formatted_dates):
             idcard_data["gender"],         # Gender
             formatted_dates["expiry_date_mrz"]  # Expiry date
     )
-
-def escape_data_for_xml(data):
-    """Escape all string values for XML safety."""
-    return {k: html.escape(str(v).upper()) if isinstance(v, str) else v
-            for k, v in data.items()}
-
-def render_front_svg(template_path, data, photo_base64):
-    """Render the ID card front SVG template with data."""
-    try:
-        with open(template_path) as f:
-            template = Template(f.read())
-
-        return template.render(
-                NAME=data["surname"],
-                FIRSTNAME=data["name"],
-                DATE_OF_BIRTH=data["birth_date_display"],
-                PLACE_OF_BIRTH=data["place_of_birth"],
-                DATE_OF_EXPIRY=data["expiry_date_display"],
-                CARD_NUMBER=data["id_card"],
-                PHOTO=photo_base64,
-                ID_NUMBER=data["npi"],
-        )
-    except Exception as e:
-        raise RuntimeError(f"Failed to render front SVG template: {e}")
-
-def render_back_svg(template_path, data):
-    """Render the ID card back SVG template with data."""
-    try:
-        with open(template_path) as f:
-            template = Template(f.read())
-
-        return template.render(
-                MRZ_LINE1=data["mrz_line1"],
-                MRZ_LINE2=data["mrz_line2"],
-                GENDER=data["gender"]
-        )
-    except Exception as e:
-        raise RuntimeError(f"Failed to render back SVG template: {e}")
-
-def svg_to_pil_image(svg_content, scale=3):
-    """Convert SVG content to PIL Image."""
-    png_data = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'), scale=scale, unsafe=True)
-    return Image.open(io.BytesIO(png_data))
-
-def main(front_template="svg_files/bj_idcard_front.svg",
-         back_template="svg_files/bj_idcard_back.svg",
-         output_dir="data", scale=3):
-    """Main function to generate an ID card image with front and back sides."""
-    # Initialize Faker with multiple locales
-    fake = Faker(['yo_NG', 'fr_FR', 'zu_ZA'])
-
-    # Load random photo
-    photo_base64 = load_random_photo()
-
-    # Generate ID card data
-    idcard_data = generate_idcard_data(fake)
-    formatted_dates = format_dates(idcard_data)
-
-    # Generate MRZ code
-    mrz_generator = generate_mrz(idcard_data, formatted_dates)
     mrz_lines = str(mrz_generator).split('\n')
 
     # Combine all data
     combined_data = {
             **idcard_data,
             **formatted_dates,
-            "mrz_line1": mrz_lines[0] if len(mrz_lines) > 0 else "",
+            "mrz_line1": mrz_lines[0] if mrz_lines else "",
             "mrz_line2": mrz_lines[1] if len(mrz_lines) > 1 else ""
     }
 
     # Escape data for XML
-    escaped_data = escape_data_for_xml(combined_data)
+    escaped_data = {k: html.escape(str(v).upper()) if isinstance(v, str) else v
+                    for k, v in combined_data.items()}
 
-    # Render SVG
-    rendered_svg_front = render_front_svg(front_template, escaped_data, photo_base64)
-    rendered_svg_back = render_back_svg(back_template, escaped_data)
+    # Render front SVG
+    with open(front_template) as f:
+        front_template = Template(f.read())
+    rendered_svg_front = front_template.render(
+            NAME=escaped_data["surname"],
+            FIRSTNAME=escaped_data["name"],
+            DATE_OF_BIRTH=escaped_data["birth_date_display"],
+            PLACE_OF_BIRTH=escaped_data["place_of_birth"],
+            DATE_OF_EXPIRY=escaped_data["expiry_date_display"],
+            CARD_NUMBER=escaped_data["id_card"],
+            PHOTO=photo_base64,
+            ID_NUMBER=escaped_data["npi"],
+    )
 
-    # Convert SVGs to PIL Images
-    front_image = svg_to_pil_image(rendered_svg_front, scale)
-    back_image = svg_to_pil_image(rendered_svg_back, scale)
+    # Render back SVG
+    with open(back_template) as f:
+        back_template = Template(f.read())
+    rendered_svg_back = back_template.render(
+            MRZ_LINE1=escaped_data["mrz_line1"],
+            MRZ_LINE2=escaped_data["mrz_line2"],
+            GENDER=escaped_data["gender"]
+    )
 
-    # Create a new image with both front and back
+    # Convert SVGs to PNG images
+    png_front = cairosvg.svg2png(bytestring=rendered_svg_front.encode('utf-8'), scale=scale, unsafe=True)
+    png_back = cairosvg.svg2png(bytestring=rendered_svg_back.encode('utf-8'), scale=scale, unsafe=True)
+
+    # Convert to PIL Images
+    front_image = Image.open(io.BytesIO(png_front))
+    back_image = Image.open(io.BytesIO(png_back))
+
+    # Create combined image
     width = max(front_image.width, back_image.width)
-    height = front_image.height + back_image.height + 10  # 10px gap between images
+    height = front_image.height + back_image.height + 10  # 10px gap
     combined_image = Image.new('RGBA', (width, height), (255, 255, 255, 0))
 
-    # Paste front and back images
+    # Paste images
     combined_image.paste(front_image, (0, 0))
     combined_image.paste(back_image, (0, front_image.height + 10))
 
-    # Create output directory if it doesn't exist
-    Path(output_dir).mkdir(exist_ok=True)
-
-    # Generate unique ID based on ID card number and timestamp
+    # Save image
     unique_id = f"{idcard_data['id_card']}_{int(time.time())}"
-
-    # Create output path with unique ID
     output_path = Path(output_dir) / f"idcard_{unique_id}.png"
+    combined_image.save(str(output_path), optimize=True)
 
-    # Save the combined image
-    combined_image.save(str(output_path))
-
-    combined_data["idcard_path"] = str(output_path)
-    return combined_data
+    return {
+            "idcard_path": str(output_path),
+            "id_card": idcard_data["id_card"],
+            "name": idcard_data["name"],
+            "surname": idcard_data["surname"],
+            "birth_date": idcard_data["birth_date"],
+            "place_of_birth": idcard_data["place_of_birth"],
+            "npi": idcard_data["npi"],
+            "expiry_date": idcard_data["expiry_date"],
+            "sex": idcard_data["gender"]
+    }
 
 if __name__ == "__main__":
-    print(main())
+    start_time = time.time()
+    result = main()
+    end_time = time.time()
+    print(f"Generated ID card: {result['idcard_path']}")
+    print(f"Name: {result['surname']}, {result['name']}")
+    print(f"ID: {result['id_card']}")
+    print(f"Passport generated in {end_time - start_time:.3f} seconds")

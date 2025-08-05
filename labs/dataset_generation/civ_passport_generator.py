@@ -165,8 +165,43 @@ def main(template_path="svg_files/civ_passport.svg", output_dir="data", scale=3)
             scale=scale,
             unsafe=True
     )
+
     combined_data["output_path"] = str(output_path)
     return combined_data
 
+def main(template_path="svg_files/civ_passport.svg", output_dir="data", scale=3, count=1):
+    """Main function to generate passport images."""
+    # Create output directory if it doesn't exist
+    Path(output_dir).mkdir(exist_ok=True)
+
+    # Initialize Faker with multiple locales
+    fake = Faker(['yo_NG', 'fr_FR', 'zu_ZA'])
+
+    # For single passport generation
+    if count == 1:
+        return generate_passport(template_path, output_dir, scale, fake)
+
+    # For batch processing
+    results = []
+    with ThreadPoolExecutor(max_workers=min(count, 8)) as executor:
+        # Pre-load a photo to reuse for better performance in testing
+        photo = load_random_photo() if count > 10 else None
+
+        # Submit all passport generation tasks
+        futures = [
+                executor.submit(generate_passport, template_path, output_dir, scale, fake, photo)
+                for _ in range(count)
+        ]
+
+        # Collect results
+        for future in futures:
+            results.append(future.result())
+
+    return results
+
 if __name__ == "__main__":
-    print(main())
+    start_time = time.time()
+    result = main()
+    end_time = time.time()
+    print(result)
+    print(f"Passport generated in {end_time - start_time:.3f} seconds")
