@@ -1,11 +1,11 @@
 import os
-import random
 import json
 import shutil
+import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
-import pandas as pd
 from huggingface_hub import HfApi, create_repo
+from datasets import Dataset, load_dataset
 
 # Import the generator modules
 from bj_idcard_generator import main as generate_bj_idcard
@@ -180,9 +180,6 @@ def upload_to_huggingface(repo_name, username=None):
         token = os.environ.get("HF_TOKEN")
         if not token:
             token = input("Enter your Hugging Face API token: ")
-
-        # No need to call set_access_token, just pass the token to each API call
-        # api.set_access_token(token) - this line should be removed
 
         # Get username if not provided
         if not username:

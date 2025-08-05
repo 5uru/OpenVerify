@@ -150,14 +150,12 @@ def main(template_path="svg_files/civ_passport.svg", output_dir="data", scale=3)
     # Render SVG
     rendered_svg = render_passport_svg(template_path, escaped_data, photo_base64)
 
-    # Create output directory if it doesn't exist
-    Path(output_dir).mkdir(exist_ok=True)
-
     # Generate unique ID based on passport number and timestamp
     unique_id = f"{passport_data['passport_number']}_{int(time.time())}"
 
     # Create output path with unique ID
     output_path = Path(output_dir) / f"passport_{unique_id}.png"
+
     # Convert SVG to PNG
     cairosvg.svg2png(
             bytestring=rendered_svg.encode('utf-8'),
