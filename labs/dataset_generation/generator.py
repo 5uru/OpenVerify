@@ -113,65 +113,17 @@ def generate_documents(count_per_type=10):
     return metadata
 
 def save_metadata(metadata):
-    """Save metadata in multiple formats for HuggingFace compatibility."""
-    # Save as JSON
-    with open("dataset/metadata.json", "w") as f:
+    """Save metadata in formats compatible with HuggingFace's ImageFolder."""
+    # Save as CSV for ImageFolder compatibility (must be in the same directory as images)
+    df = pd.DataFrame(metadata)
+    df.to_csv("data/train/metadata.csv", index=False)
+
+    # Also save as JSON for reference
+    with open("data/metadata.json", "w") as f:
         json.dump(metadata, f, indent=2, default=str)
 
-    # Save as CSV
-    df = pd.DataFrame(metadata)
-    df.to_csv("dataset/metadata.csv", index=False)
-
-    # Save individual JSON files for each item
-    for i, item in enumerate(metadata):
-        with open(f"dataset/metadata/{i+1:03d}.json", "w") as f:
-            json.dump(item, f, indent=2, default=str)
-
-def create_dataset_card(count):
-    """Create a README.md file for the HuggingFace dataset."""
-    card_content = f"""# African ID Documents Dataset
-
-    This dataset contains {count} synthetically generated African identification documents:
-    - Benin ID Cards
-    - Benin Passports
-    - Côte d'Ivoire Passports
-
-    ## Dataset Structure
-
-    - `images/`: Contains the generated document images
-    - `metadata.json`: Complete metadata for all documents
-    - `metadata.csv`: Tabular metadata for all documents
-    - `metadata/`: Individual JSON files for each document
-
-    ## Metadata Fields
-
-    All documents include the following standardized metadata:
-    - firstname
-    - surname
-    - birth_date
-    - place_of_birth
-    - nationality
-    - npi (when available)
-    - id_card
-    - expiry_date
-    - sexe
-    - document_type
-    - image_filename
-
-    ## Usage
-
-    ```python
-    from datasets import load_dataset
-
-    dataset = load_dataset("YOUR_USERNAME/african-id-documents")
-    License
-    This dataset is synthetic and intended for research purposes only. """
-
-    with open("dataset/README.md", "w") as f:
-        f.write(card_content)
-
 def upload_to_huggingface(repo_name, username=None):
-    """Upload the dataset to Hugging Face."""
+    """Upload the dataset to Hugging Face using datasets library."""
     try:
         # Initialize Hugging Face API
         api = HfApi()

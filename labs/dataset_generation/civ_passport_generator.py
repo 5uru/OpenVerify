@@ -120,16 +120,13 @@ def render_passport_svg(template_path, data, photo_base64):
     except Exception as e:
         raise RuntimeError(f"Failed to render SVG template: {e}")
 
-def main(template_path="svg_files/civ_passport.svg", output_dir="data", scale=3):
-    """Main function to generate a passport image."""
-    # Initialize Faker with multiple locales
-    fake = Faker(['yo_NG', 'fr_FR', 'zu_ZA'])
-
-    # Load random photo
-    photo_base64 = load_random_photo()
+def generate_passport(template_path, output_dir, scale, fake_instance, photo=None):
+    """Generate a single passport."""
+    # Load random photo if not provided
+    photo_base64 = photo or load_random_photo()
 
     # Generate passport data
-    passport_data = generate_passport_data(fake)
+    passport_data = generate_passport_data(fake_instance)
     formatted_dates = format_dates(passport_data)
 
     # Generate MRZ code
