@@ -165,7 +165,7 @@ def main(template_path="svg_files/bj_passport.svg", output_dir="data", scale=3):
             scale=scale,
             unsafe=True
     )
-    combined_data["passport_number"] = str(output_path)
+    combined_data["output_path"] = str(output_path)
     return combined_data
 
 if __name__ == "__main__":
